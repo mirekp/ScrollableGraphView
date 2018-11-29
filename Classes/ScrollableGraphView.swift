@@ -63,7 +63,7 @@ import UIKit
     // Reference Line Settings
     // #######################
     
-    var referenceLines: ReferenceLines? = nil
+    var referenceLines = [ReferenceLines]()
     
     // MARK: - Private State
     // #####################
@@ -89,7 +89,7 @@ import UIKit
     private var plots: [Plot] = [Plot]()
     
     // Reference Lines
-    private var referenceLineView: ReferenceLineDrawingView?
+    private var referenceLineViews = [ReferenceLineDrawingView]()
     
     // Labels
     private var labelsView = UIView()
@@ -155,7 +155,7 @@ import UIKit
         self.shouldAnimateOnStartup = false
         
         // Customise how the reference lines look in IB
-        let referenceLines = ReferenceLines()
+        let referenceLines = [ReferenceLines()]
         self.addReferenceLines(referenceLines: referenceLines)
     }
     
@@ -246,7 +246,7 @@ import UIKit
         // 6.
         // Add the reference lines, can only add this once we know the range.
 
-        if(referenceLines != nil) {
+        if referenceLines.count > 0 {
             addReferenceViewDrawingView()
         }
         
@@ -278,32 +278,35 @@ import UIKit
     
     private func addReferenceViewDrawingView() {
         
-        guard let referenceLines = self.referenceLines else {
-            // We can want to add this if the settings arent nil.
-            return
+        referenceLineViews.forEach { view in
+            view.removeFromSuperview()
         }
+        referenceLineViews.removeAll()
         
-        if(referenceLines.shouldShowReferenceLines) {
+        for referenceLine in referenceLines {
+        
+        if(referenceLine.shouldShowReferenceLines) {
             let viewport = CGRect(x: 0, y: 0, width: viewportWidth, height: viewportHeight)
             var referenceLineBottomMargin = bottomMargin
             
             // Have to adjust the bottom line if we are showing data point labels (x-axis).
-            if(referenceLines.shouldShowLabels && referenceLines.dataPointLabelFont != nil) {
-                referenceLineBottomMargin += (referenceLines.dataPointLabelFont!.pointSize + referenceLines.dataPointLabelTopMargin + referenceLines.dataPointLabelBottomMargin)
+            if(referenceLine.shouldShowLabels && referenceLine.dataPointLabelFont != nil) {
+                referenceLineBottomMargin += (referenceLine.dataPointLabelFont!.pointSize + referenceLine.dataPointLabelTopMargin + referenceLine.dataPointLabelBottomMargin)
             }
             
-            referenceLineView?.removeFromSuperview()
-            referenceLineView = ReferenceLineDrawingView(
+            let referenceLineView = (ReferenceLineDrawingView(
                 frame: viewport,
                 topMargin: topMargin,
                 bottomMargin: referenceLineBottomMargin,
-                referenceLineColor: referenceLines.referenceLineColor,
-                referenceLineThickness: referenceLines.referenceLineThickness,
-                referenceLineSettings: referenceLines)
+                referenceLineColor: referenceLine.referenceLineColor,
+                referenceLineThickness: referenceLine.referenceLineThickness,
+                referenceLineSettings: referenceLine))
             
-            referenceLineView?.set(range: self.range)
+            referenceLineView.set(range: self.range)
+            referenceLineViews.append(referenceLineView)
             
-            self.addSubview(referenceLineView!)
+            self.addSubview(referenceLineView)
+        }
         }
     }
     
@@ -317,7 +320,7 @@ import UIKit
         var availableGraphHeight = frame.height
         availableGraphHeight = availableGraphHeight - topMargin - bottomMargin
         
-        if let referenceLines = referenceLines {
+        if let referenceLines = referenceLines.first {
             if(referenceLines.shouldShowLabels && referenceLines.dataPointLabelFont != nil) {
                 availableGraphHeight -= (referenceLines.dataPointLabelFont!.pointSize + referenceLines.dataPointLabelTopMargin + referenceLines.dataPointLabelBottomMargin)
             }
@@ -385,7 +388,9 @@ import UIKit
         
         updateOffsetsForGradients(offsetWidth: offsetWidth)
         
-        referenceLineView?.frame.origin.x = offsetWidth
+        referenceLineViews.forEach { referenceLineView in
+            referenceLineView.frame.origin.x = offsetWidth
+        }
     }
     
     private func updateOffsetsForGradients(offsetWidth: CGFloat) {
@@ -411,8 +416,10 @@ import UIKit
         updateFramesForGradientLayers(viewportWidth: viewportWidth, viewportHeight: viewportHeight)
         
         // Reference lines should extend over the entire viewport
-        referenceLineView?.set(viewportWidth: viewportWidth, viewportHeight: viewportHeight)
-        
+        referenceLineViews.forEach { referenceLineView in
+            referenceLineView.set(viewportWidth: viewportWidth, viewportHeight: viewportHeight)
+        }
+
         self.contentSize.height = viewportHeight
     }
     
@@ -446,7 +453,7 @@ import UIKit
         }
     }
     
-    public func addReferenceLines(referenceLines: ReferenceLines) {
+    public func addReferenceLines(referenceLines: [ReferenceLines]) {
         
         // If we aren't setup yet, just save the reference lines and the setup will take care of it.
         if(isInitialSetup) {
@@ -482,7 +489,7 @@ import UIKit
         startAnimations(withStaggerValue: 0.15)
     }
     
-    private func addReferenceLinesToGraph(referenceLines: ReferenceLines) {
+    private func addReferenceLinesToGraph(referenceLines: [ReferenceLines]) {
         self.referenceLines = referenceLines
         addReferenceViewDrawingView()
         
@@ -703,12 +710,10 @@ import UIKit
         
         updatePaths()
         
-        if let ref = self.referenceLines {
-            if(ref.shouldShowLabels) {
-                let deactivatedLabelPoints = filterPointsForLabels(fromPoints: deactivatedPoints)
-                let activatedLabelPoints = filterPointsForLabels(fromPoints: activatedPoints)
-                updateLabels(deactivatedPoints: deactivatedLabelPoints, activatedPoints: activatedLabelPoints)
-            }
+        for ref in referenceLines where ref.shouldShowLabels {
+                let deactivatedLabelPoints = filterPointsForLabels(fromPoints: deactivatedPoints, in: ref)
+                let activatedLabelPoints = filterPointsForLabels(fromPoints: activatedPoints, in: ref)
+                updateLabels(deactivatedPoints: deactivatedLabelPoints, activatedPoints: activatedLabelPoints, in: ref)
         }
     }
     
@@ -726,7 +731,9 @@ import UIKit
             }
         }
         
-        referenceLineView?.set(range: range)
+        referenceLineViews.forEach { view in
+            view.set(range: range)
+        }
     }
     
     private func viewportDidChange() {
@@ -799,9 +806,10 @@ import UIKit
     // TODO in 4.1: refactor all label adding & positioning code.
     
     // Update any labels for any new points that have been activated and deactivated.
-    private func updateLabels(deactivatedPoints: [Int], activatedPoints: [Int]) {
+    private func updateLabels(deactivatedPoints: [Int], activatedPoints: [Int], in referenceLines: ReferenceLines) {
         
-        guard let ref = self.referenceLines else {
+        // Only consider labels in the first referenceLines
+        guard let firstLines = self.referenceLines.first, firstLines === referenceLines else {
             return
         }
         
@@ -815,8 +823,8 @@ import UIKit
             let label = labelPool.activateLabel(forPointIndex: point)
             
             label.text = (dataSource?.label(atIndex: point) ?? "")
-            label.textColor = ref.dataPointLabelColor
-            label.font = ref.dataPointLabelFont
+            label.textColor = referenceLines.dataPointLabelColor
+            label.font = referenceLines.dataPointLabelFont
             
             label.sizeToFit()
             
@@ -825,7 +833,7 @@ import UIKit
             let rangeMin = (shouldAdaptRange) ? self.range.min : self.rangeMin
             let position = calculatePosition(atIndex: point, value: rangeMin)
             
-            label.frame = CGRect(origin: CGPoint(x: position.x - label.frame.width / 2, y: position.y + ref.dataPointLabelTopMargin), size: label.frame.size)
+            label.frame = CGRect(origin: CGPoint(x: position.x - label.frame.width / 2, y: position.y + referenceLines.dataPointLabelTopMargin), size: label.frame.size)
             
             let _ = labelsView.subviews.filter { $0.frame == label.frame }.map { $0.removeFromSuperview() }
             
@@ -835,7 +843,7 @@ import UIKit
     
     private func updateLabelsForCurrentInterval() {
         // Have to ensure that the labels are added if we are supposed to be showing them.
-        if let ref = self.referenceLines {
+        for ref in self.referenceLines {
             if(ref.shouldShowLabels) {
                 
                 var activatedPoints: [Int] = []
@@ -843,17 +851,15 @@ import UIKit
                     activatedPoints.append(i)
                 }
                 
-                let filteredPoints = filterPointsForLabels(fromPoints: activatedPoints)
-                updateLabels(deactivatedPoints: filteredPoints, activatedPoints: filteredPoints)
+                let filteredPoints = filterPointsForLabels(fromPoints: activatedPoints, in: ref)
+                updateLabels(deactivatedPoints: filteredPoints, activatedPoints: filteredPoints, in: ref)
             }
         }
     }
     
     private func repositionActiveLabels() {
         
-        guard let ref = self.referenceLines else {
-            return
-        }
+        for ref in self.referenceLines {
         
         for label in labelPool.activeLabels {
             
@@ -862,18 +868,18 @@ import UIKit
             
             label.frame.origin.y = position.y + ref.dataPointLabelTopMargin
         }
+        }
     }
     
-    private func filterPointsForLabels(fromPoints points:[Int]) -> [Int] {
+    private func filterPointsForLabels(fromPoints points:[Int], in referenceLine: ReferenceLines) -> [Int] {
         
-        guard let ref = self.referenceLines else {
+        if referenceLine.dataPointLabelsSparsity == 1 {
             return points
         }
         
-        if(ref.dataPointLabelsSparsity == 1) {
-            return points
-        }
-        return points.filter({ $0 % ref.dataPointLabelsSparsity == 0 })
+        
+        return points.filter({
+            $0 % referenceLine.dataPointLabelsSparsity == 0 })
     }
     
     // MARK: - Drawing Delegate
@@ -899,7 +905,7 @@ import UIKit
         // Calculate the position on in the view for the value specified.
         var graphHeight = viewportHeight - topMargin - bottomMargin
         
-        if let ref = self.referenceLines {
+        if let ref = self.referenceLines.first {
             if(ref.shouldShowLabels && ref.dataPointLabelFont != nil) {
                 graphHeight -= (ref.dataPointLabelFont!.pointSize + ref.dataPointLabelTopMargin + ref.dataPointLabelBottomMargin)
             }
